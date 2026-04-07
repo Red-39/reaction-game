@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>React — Reaction Timer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* =============================================
+       CSS CUSTOM PROPERTIES & RESET
+    ============================================= */
+    :root {
+      --bg:        #0D1B2A;
+      --surface:   #1C2E40;
+      --cyan:      #00D4FF;
+      --lime:      #A8FF3E;
+      --red:       #FF4757;
+      --white:     #E8F0F7;
+      --amber:     #FFB830;
+      --muted:     #4A6080;
+      --font-head: 'Space Grotesk', sans-serif;
+      --font-body: 'Inter', sans-serif;
+      --radius:    16px;
+      --transition: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--white);
+      font-family: var(--font-body);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* =============================================
+       THREE.JS CANVAS LAYER
+    ============================================= */
+    #bg-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* =============================================
+       GAME UI OVERLAY
+    ============================================= */
+    #app {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    /* =============================================
+       SCREENS (panels)
+    ============================================= */
+    .screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+    }
+    .screen.active { display: flex; }
+
+    /* =============================================
+       TYPOGRAPHY
+    ============================================= */
+    .headline {
+      font-family: var(--font-head);
+      font-size: clamp(2rem, 6vw, 3.2rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+    .subline {
+      font-size: clamp(0.85rem, 2.5vw, 1rem);
+      color: var(--muted);
+      font-weight: 400;
+      line-height: 1.6;
+      max-width: 360px;
+    }
+
+    /* =============================================
+       ROUND INDICATOR PILLS
+    ============================================= */
+    .round-track {
+      display: flex;
+      gap: 8px;
+    }
+    .round-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1.5px solid var(--muted);
+      transition: background var(--transition), border-color var(--transition), transform 0.2s;
+    }
+    .round-dot.done   { background: var(--cyan); border-color: var(--cyan); }
+    .round-dot.active { background: var(--white); border-color: var(--white); transform: scale(1.3); }
+
+    /* =============================================
+       MAIN CLICK TARGET
+    ============================================= */
+    #click-zone {
+      position: relative;
+      width: clamp(200px, 55vw, 280px);
+      height: clamp(200px, 55vw, 280px);
+      border-radius: 50%;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.15s ease, box-shadow 0.35s ease;
+    }
+    #click-zone::before {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 50%;
+      background: conic-gradient(var(--cyan), transparent, var(--cyan));
+      opacity: 0.25;
+      animation: spin 8s linear infinite;
+    }
+    #click-zone-inner {
+      position: absolute;
+      inset: 3px;
+      border-radius: 50%;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background var(--transition);
+    }
+    .zone-label {
+      font-family: var(--font-head);
+      font-size: clamp(0.75rem, 2.5vw, 0.9rem);
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      transition: color var(--transition);
+    }
+    .zone-timer {
+      font-family: var(--font-head);
+      font-size: clamp(2.8rem, 9vw, 4.5rem);
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      color: var(--white);
+      line-height: 1;
+      transition: color var(--transition);
+    }
+
+    /* State: waiting */
+    #click-zone.state-waiting #click-zone-inner { background: var(--surface); }
+    #click-zone.state-waiting .zone-label { color: var(--muted); }
+    #click-zone.state-waiting .zone-timer { color: var(--white); }
+
+    /* State: ready */
+    #click-zone.state-ready #click-zone-inner { background: #1a2e45; }
+    #click-zone.state-ready::before { opacity: 0.55; animation-duration: 3s; }
+
+    /* State: go */
+    #click-zone.state-go #click-zone-inner { background: rgba(168, 255, 62, 0.12); }
+    #click-zone.state-go .zone-timer  { color: var(--lime); }
+    #click-zone.state-go .zone-label  { color: var(--lime); }
+    #click-zone.state-go {
+      box-shadow: 0 0 60px rgba(168,255,62,0.35), 0 0 120px rgba(168,255,62,0.1);
+    }
+    #click-zone.state-go::before { opacity: 0; }
+
+    /* State: early */
+    #click-zone.state-early #click-zone-inner { background: rgba(255,71,87,0.15); }
+    #click-zone.state-early .zone-timer { color: var(--red); }
+    #click-zone.state-early .zone-label { color: var(--red); }
+    #click-zone.state-early {
+      box-shadow: 0 0 50px rgba(255,71,87,0.4);
+      animation: shake 0.45s ease;
+    }
+
+    /* =============================================
+       FEEDBACK BADGE (beneath click zone)
+    ============================================= */
+    #feedback {
+      font-family: var(--font-head);
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      min-height: 28px;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.3s, transform 0.3s, color 0.3s;
+    }
+    #feedback.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    #feedback.ok    { color: var(--lime); }
+    #feedback.warn  { color: var(--red); }
+    #feedback.info  { color: var(--cyan); }
+
+    /* =============================================
+       BUTTONS
+    ============================================= */
+    .btn {
+      font-family: var(--font-head);
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 14px 40px;
+      border-radius: 50px;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.25s ease, filter 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary {
+      background: var(--cyan);
+      color: var(--bg);
+      box-shadow: 0 0 30px rgba(0,212,255,0.35);
+    }
+    .btn-primary:hover { filter: brightness(1.12); box-shadow: 0 0 45px rgba(0,212,255,0.5); }
+    .btn-ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1.5px solid var(--muted);
+    }
+    .btn-ghost:hover { border-color: var(--white); color: var(--white); }
+
+    /* =============================================
+       RESULTS SCREEN
+    ============================================= */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      width: 100%;
+    }
+    .stat-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 18px 12px;
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    .stat-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      font-family: var(--font-head);
+      font-size: clamp(1.5rem, 4vw, 2rem);
+      font-weight: 800;
+      color: var(--amber);
+      letter-spacing: -0.03em;
+    }
+    .stat-unit {
+      font-size: 0.7rem;
+      color: var(--muted);
+      font-weight: 500;
+      margin-left: 2px;
+    }
+
+    .round-results {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .round-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 10px 16px;
+      border: 1px solid rgba(255,255,255,0.04);
+      font-size: 0.88rem;
+    }
+    .round-row .rr-label { color: var(--muted); font-weight: 500; }
+    .round-row .rr-val   {
+      font-family: var(--font-head);
+      font-weight: 700;
+      color: var(--white);
+    }
+    .round-row.best  .rr-val { color: var(--lime); }
+    .round-row.worst .rr-val { color: var(--red); }
+    .round-row .rr-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+    .round-row.best  .rr-badge { background: rgba(168,255,62,0.15); color: var(--lime); }
+    .round-row.worst .rr-badge { background: rgba(255,71,87,0.15);  color: var(--red); }
+
+    /* =============================================
+       DECORATIVE CORNER LINES
+    ============================================= */
+    .corner-deco {
+      position: fixed;
+      width: 60px; height: 60px;
+      pointer-events: none;
+      z-index: 5;
+      opacity: 0.2;
+    }
+    .corner-deco svg { width: 100%; height: 100%; }
+    .c-tl { top: 20px;    left: 20px;    }
+    .c-tr { top: 20px;    right: 20px;   transform: scaleX(-1); }
+    .c-bl { bottom: 20px; left: 20px;    transform: scaleY(-1); }
+    .c-br { bottom: 20px; right: 20px;   transform: scale(-1); }
+
+    /* =============================================
+       BRANDING WATERMARK
+    ============================================= */
+    #brand {
+      position: fixed;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      font-size: 0.72rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    /* =============================================
+       KEYFRAME ANIMATIONS
+    ============================================= */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20%      { transform: translateX(-10px) rotate(-2deg); }
+      40%      { transform: translateX(10px)  rotate(2deg); }
+      60%      { transform: translateX(-7px)  rotate(-1deg); }
+      80%      { transform: translateX(7px)   rotate(1deg); }
+    }
+    @keyframes fadeUp {
+      from { opacity:0; transform: translateY(14px); }
+      to   { opacity:1; transform: translateY(0); }
+    }
+    .animate-in { animation: fadeUp 0.45s ease forwards; }
+
+    /* =============================================
+       RESPONSIVE
+    ============================================= */
+    @media (max-width: 400px) {
+      .stats-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .stat-card  { padding: 14px 8px; }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- THREE.JS BACKGROUND CANVAS -->
+  <canvas id="bg-canvas"></canvas>
+
+  <!-- CORNER DECORATIONS -->
+  <div class="corner-deco c-tl">
+    <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 58 L2 2 L58 2" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <div class="corner-deco c-tr">
+    <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 58 L2 2 L58 2" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <div class="corner-deco c-bl">
+    <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 58 L2 2 L58 2" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <div class="corner-deco c-br">
+    <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 58 L2 2 L58 2" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+  </div>
+
+  <!-- GAME UI OVERLAY -->
+  <div id="app">
+
+    <!-- ── INTRO SCREEN ── -->
+    <div id="screen-intro" class="screen active">
+      <div class="headline">React<span style="color:var(--cyan)">.</span></div>
+      <p class="subline">Test your reaction time across 5 rounds. Wait for green — click as fast as you can.</p>
+      <button class="btn btn-primary" id="btn-start">Start Game</button>
+    </div>
+
+    <!-- ── GAME SCREEN ── -->
+    <div id="screen-game" class="screen">
+      <div class="round-track" id="round-track"></div>
+
+      <div id="click-zone" class="state-waiting" role="button" tabindex="0" aria-label="Click when green">
+        <div id="click-zone-inner">
+          <span class="zone-label" id="zone-label">WAIT</span>
+          <span class="zone-timer" id="zone-timer">—</span>
+        </div>
+      </div>
+
+      <div id="feedback" role="status" aria-live="polite"></div>
+    </div>
+
+    <!-- ── RESULTS SCREEN ── -->
+    <div id="screen-results" class="screen">
+      <div class="headline" style="color:var(--amber)">Results</div>
+
+      <div class="stats-grid" id="stats-grid"></div>
+
+      <div class="round-results" id="round-results"></div>
+
+      <div style="display:flex;gap:12px;">
+        <button class="btn btn-primary" id="btn-restart">Play Again</button>
+        <button class="btn btn-ghost"   id="btn-share"  >Share</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- BRAND -->
+  <div id="brand">React — Reaction Timer</div>
+
+  <!-- THREE.JS CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+
+  <script>
+  /* =============================================
+     SECTION 1 — INIT & CONSTANTS
+  ============================================= */
+  const ROUNDS        = 5;
+  const MIN_DELAY_MS  = 2000;
+  const MAX_DELAY_MS  = 5000;
+  const COLORS = {
+    cyan:    0x00D4FF,
+    lime:    0xA8FF3E,
+    red:     0xFF4757,
+    white:   0xE8F0F7,
+    amber:   0xFFB830,
+    muted:   0x4A6080,
+    surface: 0x1C2E40,
+  };
+
+  /* =============================================
+     SECTION 2 — THREE.JS SCENE SETUP
+  ============================================= */
+  const canvas   = document.getElementById('bg-canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x0D1B2A, 1);
+
+  const scene  = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 200);
+  camera.position.set(0, 0, 18);
+
+  // ── Geometry pool ──
+  const geometries = [
+    new THREE.IcosahedronGeometry(1.2, 0),
+    new THREE.OctahedronGeometry(1.1, 0),
+    new THREE.TorusKnotGeometry(0.6, 0.22, 80, 12),
+  ];
+
+  const NUM_SHAPES = 18;
+  const shapes     = [];
+
+  for (let i = 0; i < NUM_SHAPES; i++) {
+    const geo = geometries[i % geometries.length].clone();
+    const mat = new THREE.MeshBasicMaterial({
+      color:       COLORS.cyan,
+      wireframe:   true,
+      transparent: true,
+      opacity:     0.08 + Math.random() * 0.08,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+
+    // Spread across scene
+    const r = 6 + Math.random() * 10;
+    const θ = Math.random() * Math.PI * 2;
+    const φ = Math.acos(2 * Math.random() - 1);
+    mesh.position.set(
+      r * Math.sin(φ) * Math.cos(θ),
+      r * Math.sin(φ) * Math.sin(θ),
+      r * Math.cos(φ) - 4,
+    );
+
+    mesh.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+    );
+
+    // Store per-shape animation state
+    mesh.userData = {
+      basePos:   mesh.position.clone(),
+      rotSpeed:  new THREE.Vector3(
+        (Math.random() - 0.5) * 0.003,
+        (Math.random() - 0.5) * 0.003,
+        (Math.random() - 0.5) * 0.003,
+      ),
+      orbitSpeed: 0.0008 + Math.random() * 0.0008,
+      orbitAngle: Math.random() * Math.PI * 2,
+      orbitRadius: 0.3 + Math.random() * 0.4,
+      explodeVel: new THREE.Vector3(),
+      pulse:     Math.random() * Math.PI * 2,
+    };
+
+    scene.add(mesh);
+    shapes.push(mesh);
+  }
+
+  // ── Scene state controller ──
+  const sceneState = {
+    current:   'idle',
+    targetCol: new THREE.Color(COLORS.cyan),
+    targetOp:  0.1,
+    targetSpd: 1.0,
+    shakeAmt:  0,
+    exploding: false,
+    explodeT:  0,
+  };
+
+  function setSceneState(state) {
+    sceneState.current = state;
+    sceneState.shakeAmt  = 0;
+    sceneState.exploding = false;
+
+    switch (state) {
+      case 'idle':
+        sceneState.targetCol = new THREE.Color(COLORS.cyan);
+        sceneState.targetOp  = 0.1;
+        sceneState.targetSpd = 1.0;
+        break;
+      case 'waiting':
+        sceneState.targetCol = new THREE.Color(COLORS.cyan);
+        sceneState.targetOp  = 0.12;
+        sceneState.targetSpd = 1.0;
+        break;
+      case 'ready':
+        sceneState.targetCol = new THREE.Color(COLORS.white);
+        sceneState.targetOp  = 0.22;
+        sceneState.targetSpd = 3.5;
+        break;
+      case 'go':
+        sceneState.targetCol = new THREE.Color(COLORS.lime);
+        sceneState.targetOp  = 0.28;
+        sceneState.targetSpd = 0.5;
+        sceneState.exploding = true;
+        sceneState.explodeT  = 0;
+        // Give each shape an outward velocity
+        shapes.forEach(m => {
+          const dir = m.position.clone().normalize();
+          m.userData.explodeVel.copy(dir).multiplyScalar(0.4 + Math.random() * 0.5);
+        });
+        break;
+      case 'early':
+        sceneState.targetCol = new THREE.Color(COLORS.red);
+        sceneState.targetOp  = 0.3;
+        sceneState.targetSpd = 0.5;
+        sceneState.shakeAmt  = 1;
+        setTimeout(() => { sceneState.shakeAmt = 0; }, 500);
+        break;
+      case 'results':
+        sceneState.targetCol = new THREE.Color(COLORS.amber);
+        sceneState.targetOp  = 0.15;
+        sceneState.targetSpd = 0.5;
+        break;
+    }
+  }
+
+  // ── Render loop ──
+  const clock = new THREE.Clock();
+  const _col  = new THREE.Color();
+
+  function renderLoop() {
+    requestAnimationFrame(renderLoop);
+    const dt   = clock.getDelta();
+    const time = clock.getElapsedTime();
+
+    shapes.forEach((mesh, i) => {
+      const ud = mesh.userData;
+
+      // Interpolate color
+      _col.copy(mesh.material.color).lerp(sceneState.targetCol, 0.04);
+      mesh.material.color.copy(_col);
+
+      // Interpolate opacity
+      const targetOp = sceneState.targetOp * (0.7 + 0.3 * Math.sin(time * 1.2 + ud.pulse));
+      mesh.material.opacity += (targetOp - mesh.material.opacity) * 0.05;
+
+      // Rotation
+      mesh.rotation.x += ud.rotSpeed.x * sceneState.targetSpd;
+      mesh.rotation.y += ud.rotSpeed.y * sceneState.targetSpd;
+      mesh.rotation.z += ud.rotSpeed.z * sceneState.targetSpd;
+
+      // Orbit drift
+      ud.orbitAngle += ud.orbitSpeed * sceneState.targetSpd;
+      const orbitOffset = new THREE.Vector3(
+        Math.cos(ud.orbitAngle) * ud.orbitRadius,
+        Math.sin(ud.orbitAngle) * ud.orbitRadius,
+        0,
+      );
+
+      // Explode logic
+      if (sceneState.exploding) {
+        sceneState.explodeT += dt;
+        ud.explodeVel.multiplyScalar(0.95);
+        mesh.position.addScaledVector(ud.explodeVel, dt * 60);
+        // Pull back toward base after 1.5s
+        if (sceneState.explodeT > 1.5) {
+          mesh.position.lerp(ud.basePos, 0.04);
+        }
+      } else {
+        mesh.position.lerp(ud.basePos.clone().add(orbitOffset), 0.03);
+      }
+
+      // Screen shake
+      if (sceneState.shakeAmt > 0) {
+        mesh.position.x += (Math.random() - 0.5) * sceneState.shakeAmt * 0.4;
+        mesh.position.y += (Math.random() - 0.5) * sceneState.shakeAmt * 0.4;
+      }
+    });
+
+    // Gentle camera sway
+    camera.position.x = Math.sin(time * 0.12) * 0.6;
+    camera.position.y = Math.cos(time * 0.09) * 0.4;
+    camera.lookAt(0, 0, 0);
+
+    renderer.render(scene, camera);
+  }
+  renderLoop();
+
+  // Handle resize
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  /* =============================================
+     SECTION 3 — GAME STATE
+  ============================================= */
+  const state = {
+    phase:        'intro',   // intro | waiting | ready | go | result | results
+    round:        0,
+    times:        [],
+    startTime:    0,
+    stimulusTimer: null,
+  };
+
+  /* =============================================
+     SECTION 4 — UI HELPERS
+  ============================================= */
+  const screens = {
+    intro:   document.getElementById('screen-intro'),
+    game:    document.getElementById('screen-game'),
+    results: document.getElementById('screen-results'),
+  };
+
+  function showScreen(name) {
+    Object.values(screens).forEach(s => s.classList.remove('active'));
+    screens[name].classList.add('active');
+    screens[name].querySelectorAll('.animate-in-child').forEach((el, i) => {
+      el.style.animationDelay = `${i * 0.07}s`;
+    });
+  }
+
+  const clickZone  = document.getElementById('click-zone');
+  const zoneLabel  = document.getElementById('zone-label');
+  const zoneTimer  = document.getElementById('zone-timer');
+  const feedback   = document.getElementById('feedback');
+  const roundTrack = document.getElementById('round-track');
+
+  function setZoneState(s, labelTxt, timerTxt) {
+    clickZone.className = `state-${s}`;
+    zoneLabel.textContent = labelTxt;
+    zoneTimer.textContent = timerTxt;
+  }
+
+  function showFeedback(msg, type) {
+    feedback.textContent  = msg;
+    feedback.className    = `visible ${type}`;
+    clearTimeout(feedback._t);
+    feedback._t = setTimeout(() => feedback.className = '', 2200);
+  }
+
+  function buildRoundTrack() {
+    roundTrack.innerHTML = '';
+    for (let i = 0; i < ROUNDS; i++) {
+      const d = document.createElement('div');
+      d.className = 'round-dot';
+      d.dataset.idx = i;
+      roundTrack.appendChild(d);
+    }
+  }
+
+  function updateRoundTrack() {
+    roundTrack.querySelectorAll('.round-dot').forEach((d, i) => {
+      d.className = 'round-dot';
+      if (i < state.round) d.classList.add('done');
+      else if (i === state.round) d.classList.add('active');
+    });
+  }
+
+  /* =============================================
+     SECTION 5 — GAME LOGIC
+  ============================================= */
+  function startGame() {
+    state.round  = 0;
+    state.times  = [];
+    buildRoundTrack();
+    showScreen('game');
+    startRound();
+  }
+
+  function startRound() {
+    updateRoundTrack();
+    setZoneState('waiting', 'WAIT', '•••');
+    feedback.className = '';
+    setSceneState('waiting');
+    state.phase = 'waiting';
+
+    // Transition to "ready" (tense) after a short pause
+    const readyDelay = 600 + Math.random() * 400;
+    setTimeout(() => {
+      if (state.phase !== 'waiting') return;
+      state.phase = 'ready';
+      setZoneState('ready', 'READY', '···');
+      setSceneState('ready');
+
+      // Fire go after random delay
+      const goDelay = MIN_DELAY_MS + Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS);
+      state.stimulusTimer = setTimeout(fireGo, goDelay);
+    }, readyDelay);
+  }
+
+  function fireGo() {
+    state.phase     = 'go';
+    state.startTime = performance.now();
+    setZoneState('go', 'CLICK!', 'GO');
+    setSceneState('go');
+  }
+
+  function handleClick() {
+    if (state.phase === 'waiting' || state.phase === 'ready') {
+      // Early click — penalise
+      clearTimeout(state.stimulusTimer);
+      state.phase = 'early';
+      setZoneState('early', 'TOO EARLY', '✕');
+      setSceneState('early');
+      showFeedback('Too early! Round reset.', 'warn');
+      setTimeout(startRound, 1800);
+      return;
+    }
+
+    if (state.phase === 'go') {
+      const elapsed = performance.now() - state.startTime;
+      state.times.push(elapsed);
+      state.round++;
+
+      setZoneState('waiting', 'NICE!', `${Math.round(elapsed)} ms`);
+      setSceneState('idle');
+      showFeedback(`${Math.round(elapsed)} ms`, 'ok');
+
+      if (state.round >= ROUNDS) {
+        setTimeout(showResults, 1000);
+      } else {
+        setTimeout(startRound, 1200);
+      }
+      state.phase = 'result';
+    }
+  }
+
+  /* =============================================
+     SECTION 6 — RESULTS SCREEN
+  ============================================= */
+  function showResults() {
+    const times = state.times;
+    const avg   = times.reduce((a, b) => a + b, 0) / times.length;
+    const best  = Math.min(...times);
+    const worst = Math.max(...times);
+
+    setSceneState('results');
+
+    // Stats cards
+    const statsGrid = document.getElementById('stats-grid');
+    statsGrid.innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">Average</div>
+        <div class="stat-value">${Math.round(avg)}<span class="stat-unit">ms</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Best</div>
+        <div class="stat-value" style="color:var(--lime)">${Math.round(best)}<span class="stat-unit">ms</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Worst</div>
+        <div class="stat-value" style="color:var(--red)">${Math.round(worst)}<span class="stat-unit">ms</span></div>
+      </div>
+    `;
+
+    // Per-round rows
+    const roundResults = document.getElementById('round-results');
+    roundResults.innerHTML = times.map((t, i) => {
+      const isBest  = t === best  && times.filter(x => x === best).length === 1;
+      const isWorst = t === worst && times.filter(x => x === worst).length === 1;
+      const cls     = isBest ? 'best' : isWorst ? 'worst' : '';
+      const badge   = isBest ? '<span class="rr-badge">BEST</span>'
+                    : isWorst ? '<span class="rr-badge">WORST</span>' : '';
+      return `
+        <div class="round-row ${cls}">
+          <span class="rr-label">Round ${i + 1}</span>
+          ${badge}
+          <span class="rr-val">${Math.round(t)} ms</span>
+        </div>
+      `;
+    }).join('');
+
+    showScreen('results');
+  }
+
+  /* =============================================
+     SECTION 7 — EVENT HANDLERS
+  ============================================= */
+  // Start / Restart buttons
+  document.getElementById('btn-start').addEventListener('click',   startGame);
+  document.getElementById('btn-restart').addEventListener('click', startGame);
+
+  // Share button — copy summary to clipboard
+  document.getElementById('btn-share').addEventListener('click', () => {
+    const times = state.times;
+    if (!times.length) return;
+    const avg   = Math.round(times.reduce((a,b)=>a+b,0)/times.length);
+    const best  = Math.round(Math.min(...times));
+    const txt   = `React — Reaction Timer 🎯\nAvg: ${avg}ms | Best: ${best}ms | Rounds: ${ROUNDS}\nhttps://github.com/`;
+    navigator.clipboard.writeText(txt).then(() => {
+      document.getElementById('btn-share').textContent = 'Copied!';
+      setTimeout(() => document.getElementById('btn-share').textContent = 'Share', 2000);
+    }).catch(() => {});
+  });
+
+  // Click zone — mouse + touch
+  clickZone.addEventListener('click',      handleClick);
+  clickZone.addEventListener('touchstart', (e) => { e.preventDefault(); handleClick(); }, { passive: false });
+
+  // Keyboard support (Space / Enter)
+  document.addEventListener('keydown', (e) => {
+    if ((e.code === 'Space' || e.code === 'Enter') && state.phase !== 'intro' && state.phase !== 'results') {
+      e.preventDefault();
+      handleClick();
+    }
+  });
+
+  // Init scene state
+  setSceneState('idle');
+  </script>
+
+</body>
+</html>
